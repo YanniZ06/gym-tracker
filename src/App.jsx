@@ -16,7 +16,10 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      setView('dashboard')
+      
+      if (session) {
+        setView('dashboard')
+      }
 
       if (checkingSession) {
         setLoadingFadeOut(true)

@@ -11,11 +11,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       manifest: {
         name: 'Gym Tracker',
-        short_name: 'GymTracker',
+        short_name: 'Gym Tracker',
         start_url: '/gym-tracker/',
         display: 'standalone',
-        background_color: '#13111f',
-        theme_color: '#13111f',
+        background_color: '#13111f56',
+        theme_color: '#13111f56',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }
