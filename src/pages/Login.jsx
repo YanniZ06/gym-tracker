@@ -11,11 +11,6 @@ function Login({ session, setSession, onLoginSuccess }) {
     const [showLogin, setShowLogin] = useState(false)
     const [showInfo, setShowInfo] = useState(0)
 
-    async function handleLogout() {
-        await supabase.auth.signOut()
-        setSession(null)
-    }
-
     return (
         <>
             <section className={styles.center}>

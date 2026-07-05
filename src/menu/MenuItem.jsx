@@ -20,7 +20,23 @@ function MenuItem({ option, depth = 0, closeMenu }) {
                 onClick={handleClick}
                 style={{ ...styles.item, paddingLeft: `${20 + depth * 18}px` }}
             >
-                {option.icon && <img src={option.icon} alt="" style={styles.icon} />}
+                {option.icon && (
+                    <span
+                        style={{
+                            ...styles.icon,
+                            backgroundColor: 'var(--text)',
+                            WebkitMaskImage: `url(${option.icon})`,
+                            maskImage: `url(${option.icon})`,
+                            WebkitMaskSize: 'contain',
+                            maskSize: 'contain',
+                            WebkitMaskRepeat: 'no-repeat',
+                            maskRepeat: 'no-repeat',
+                            WebkitMaskPosition: 'center',
+                            maskPosition: 'center',
+                        }}
+                    />
+                )}
+                
                 <span style={styles.label}>{option.label}</span>
                 {isParent && (
                     <span
@@ -70,9 +86,9 @@ const styles = {
         gap: '12px',
     },
     icon: {
+        display: 'inline-block',
         width: '18px',
         height: '18px',
-        objectFit: 'contain',
     },
     label: {
         flex: 1,
@@ -84,7 +100,7 @@ const styles = {
     },
     divider: {
         height: '1px',
-        backgroundColor: '#7349c5',
+        backgroundColor: '#362e5e',
         borderRadius: '999px',
         margin: '0 20px',
         opacity: 0.4,

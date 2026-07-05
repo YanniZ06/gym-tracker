@@ -79,11 +79,13 @@
 }
 
 .btnLogin {
-  background: rgb(98, 155, 98);
+  background: #7349c5;
+  color: var(--text-h);
 }
 
 .btnSetpass {
-  background: rgb(190, 134, 62);
+  background: #4a2f7a;
+  color: var(--text-h);
 }
 
 .spacer {
