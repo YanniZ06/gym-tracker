@@ -60,20 +60,24 @@ h1 {
   font-size: 56px;
   letter-spacing: -1.68px;
   margin: 32px 0;
+
   @media (max-width: 1024px) {
     font-size: 36px;
     margin: 20px 0;
   }
 }
+
 h2 {
   font-size: 24px;
   line-height: 118%;
   letter-spacing: -0.24px;
   margin: 0 0 8px;
+
   @media (max-width: 1024px) {
     font-size: 20px;
   }
 }
+
 p {
   margin: 0;
 }
@@ -91,4 +95,30 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+.app-loading {
+  min-height: 100svh;
+  background: var(--bg);
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.app-loading-out {
+  opacity: 0;
+}
+
+.view-fade {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateY(0);
+}
+
+.view-fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.view-fade-out {
+  opacity: 0;
+  transform: translateY(8px);
 }

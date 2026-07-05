@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { supabase } from './supabaseClient'
+import { supabase } from '../supabaseClient'
+
+
 
 function LoginModal({ onClose, onSuccess }) {
     const [cooldown, setCooldown] = useState(0) // Sperrungscooldown
