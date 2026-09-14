@@ -1,41 +1,107 @@
 import { useState } from 'react'
+import { useEffect } from 'react'
+
 import HamburgerMenu from '../menu/HamburgerMenu'
+import OptionModal from '../modals/OptionModal'
+
 import { supabase } from '../supabaseClient'
 
 function Dashboard({ session, onLogout }) {
     const [menuOpen, setMenuOpen] = useState(false)
 
+    const [userdata, setUserdata] = useState(null)
+    const [loadingUserdata, setLoadingUserdata] = useState(false)
+
+    const [showInfo, setShowInfo] = useState(0)
+    const [info, setInfo] = useState("")
+
+    useEffect(() => {
+        fetchUserData()
+    }, [session])
+
+    function fetchUserData() {
+        if (!session?.user?.email) return
+        setLoadingUserdata(true)
+
+        supabase
+            .from('USERS')
+            .select('*')
+            .eq('login_mail', session.user.email)
+            .single()
+            .then(({ data, error }) => {
+                setLoadingUserdata(false)
+                if (error) {
+                    // console.log('Fehler [', error.code, '] beim Abrufen der Benutzerdaten:', error.message)
+
+                    if (error.code === 'PGRST116') { // Kein Eintrag gefunden
+                        createUserRecord()
+                    }
+                    else {
+                        console.error('Fehler [', error.code, '] beim Abrufen der Benutzerdaten:', error.message)
+                        setInfo('Fehler [' + error.code + '] beim Abrufen der Benutzerdaten: ' + error.message)
+                        setShowInfo(-1)
+                    }
+                } else {
+                    setUserdata(data)
+                }
+            })
+    }
+
+    function createUserRecord() {
+        supabase
+            .from('USERS')
+            .insert([{ login_mail: session.user.email, name: session.user.email}])
+            .select()
+            .single()
+            .then(({ data, error }) => {
+                setLoadingUserdata(false)
+                if (error) {
+                    console.error('Fehler [', error.code, '] beim Anlegen eines neuen Nutzers:', error.message)
+                    setInfo('Fehler [' + error.code + '] beim Anlegen eines neuen Nutzers: ' + error.message)
+                    setShowInfo(-1)
+                } else {
+                    setUserdata(data)
+                }
+            })
+    }
+
     const menuOptions = [
-        { icon: './icons/person.png', label: 'Profil', onClick: () => console.log('Profil geöffnet') },
+        { icon: './icons/person.png', label: 'Profil [Bald]', onClick: () => wipClick('Profil') },
         {
             icon: './icons/hantel.png',
             label: 'Workouts',
             onClick: () => { },
             children: [
-                { icon: './icons/plus-symbol.png', label: 'Neues Workout', onClick: () => console.log('Neues Workout') },
-                { icon: './icons/history.png', label: 'Historie', onClick: () => console.log('Historie') },
-                { icon: './icons/bar-graph.png', label: 'Statistik', onClick: () => console.log('Statistik') },
+                { icon: './icons/plus-symbol.png', label: 'Neues Workout', onClick: () => wipClick('Neues Workout') },
+                { icon: './icons/history.png', label: 'Historie [Bald]', onClick: () => wipClick('Historie') },
+                { icon: './icons/bar-graph.png', label: 'Statistik [Bald]', onClick: () => wipClick('Statistik') },
             ],
         },
     ]
+    function wipClick(menuItemName) {
+        setInfo(menuItemName)
+        setShowInfo(1)
+    }
 
     async function handleLogout() {
         await supabase.auth.signOut()
         setMenuOpen(false)
         onLogout && onLogout()
     }
-
+    
     return (
         <div style={styles.page}>
             <div style={styles.header}>
-                <button onClick={() => setMenuOpen(true)} style={styles.hamburgerButton} aria-label="Menü öffnen">
+                <button onClick={() => {
+                    if(!loadingUserdata) setMenuOpen(true)
+                }} style={styles.hamburgerButton} aria-label="Menü öffnen">
                     <span style={styles.bar} />
                     <span style={styles.bar} />
                     <span style={styles.bar} />
                 </button>
 
                 <h1 style={styles.welcome}>
-                    Willkommen{session?.user?.email ? `, ${session.user.email.split('@')[0]}` : ''}
+                    Willkommen{userdata != null ? `, ${userdata['vorname']} ${userdata['name']}` : ''}
                 </h1>
             </div>
 
@@ -47,7 +113,38 @@ function Dashboard({ session, onLogout }) {
                 userEmail={session?.user?.email}
             />
 
-            {/* Restlicher Dashboard-Inhalt kommt hier hin */}
+            {showInfo === -1 && (
+                <OptionModal
+                    title="Datenbankfehler"
+                    message={info}
+                    buttons={[{
+                        label: 'Erneut versuchen',
+                        onClick: () => {
+                            fetchUserData()
+                        }
+                    },
+                    {
+                        label: 'Zurück zum Login'
+                        // onClick: () => App.changeView('login')
+                    }
+                    ]}
+                    isError={true}
+                    canCancel={false}
+                    onClose={() => setShowInfo(0)}
+                />
+            )}
+            {showInfo === 1 && (
+                <OptionModal
+                    title="Bald verfügbar"
+                    message={"Der Bereich \"" + info + "\" ist iwann bald verfügbar."}
+                    buttons={[{
+                        label: 'Okay'
+                    }]}
+                    isError={false}
+                    canCancel={true}
+                    onClose={() => setShowInfo(0)}
+                />
+            )}
         </div>
     )
 }

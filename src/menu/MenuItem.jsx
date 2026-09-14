@@ -100,7 +100,7 @@ const styles = {
     },
     divider: {
         height: '1px',
-        backgroundColor: '#362e5e',
+        backgroundColor: '#7349c5',
         borderRadius: '999px',
         margin: '0 20px',
         opacity: 0.4,
