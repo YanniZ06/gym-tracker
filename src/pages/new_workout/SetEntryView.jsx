@@ -62,8 +62,7 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
     const [restInput, setRestInput] = useState('')
 
     const [editingSet, setEditingSet] = useState(null)
-    const [draggingIndex, setDraggingIndex] = useState(null)
-    const [dragOverIndex, setDragOverIndex] = useState(null)
+    const [reordering, setReordering] = useState(false)
 
     const [saving, setSaving] = useState(false)
 
@@ -178,6 +177,7 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
     }
 
     function handleStartEdit(set, idx) {
+        if (reordering) return
         setEditingSet(set)
         setReps(set.reps != null ? set.reps.toString() : '')
         setWeight(set.set_weight != null ? set.set_weight.toString() : '')
@@ -226,8 +226,6 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                 localStorage.setItem(lastExerciseKey, exercise.id.toString())
             }
 
-            // constant_user_exercise_id_counter: einmal pro Session+Übung ermittelt/erhöht,
-            // danach für JEDEN Satz dieser Übung in der Session wiederverwendet
             const constantCounterValue = await resolveConstantCounter()
 
             const lastSet = sets.length > 0 ? sets[sets.length - 1] : null
@@ -371,28 +369,14 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         resetFormForNewSet(remaining.map((s, i) => ({ ...s, set: i + 1 })))
     }
 
-    function handleDragStart(idx) {
-        setDraggingIndex(idx)
-    }
-
-    function handleDragOver(e, idx) {
-        e.preventDefault()
-        setDragOverIndex(idx)
-    }
-
-    async function handleDrop(idx) {
-        if (draggingIndex === null || draggingIndex === idx) {
-            setDraggingIndex(null)
-            setDragOverIndex(null)
-            return
-        }
+    async function handleMoveSet(idx, direction) {
+        const targetIdx = idx + direction
+        if (targetIdx < 0 || targetIdx >= sets.length) return
 
         const reordered = [...sets]
-        const [moved] = reordered.splice(draggingIndex, 1)
-        reordered.splice(idx, 0, moved)
+        const [moved] = reordered.splice(idx, 1)
+        reordered.splice(targetIdx, 0, moved)
 
-        setDraggingIndex(null)
-        setDragOverIndex(null)
         await renumberAndPersist(reordered)
     }
 
@@ -409,18 +393,14 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         @keyframes chipPop { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
         @keyframes panelFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        .set-row { animation: rowFadeIn 0.2s ease; transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease; cursor: grab; }
-        .set-row:active { cursor: grabbing; }
+        .set-row { animation: rowFadeIn 0.2s ease; transition: background-color 0.15s ease, border-color 0.15s ease; }
         .set-row-editing { background-color: rgba(201, 122, 58, 0.18) !important; border-color: #c97a3a !important; }
-        .set-row-dragover { border-color: #8a63d6 !important; }
-        .set-delete-btn { transition: color 0.15s ease, transform 0.15s ease; }
-        .set-delete-btn:hover { color: #e57373; transform: rotate(90deg); }
 
         .last-time-row { animation: rowFadeIn 0.2s ease; transition: background-color 0.15s ease, border-color 0.15s ease; cursor: pointer; }
         .last-time-row:hover { background-color: rgba(115, 73, 197, 0.18) !important; }
 
         .set-form { animation: formFadeIn 0.2s ease; transition: background-color 0.2s ease, border-color 0.2s ease; }
-        .set-form-editing { background-color: rgba(201, 122, 58, 0.08); border: 1px solid #c97a3a; border-radius: 12px; padding: 16px; }
+        .set-form-editing { background-color: rgba(201, 122, 58, 0.08); border: 1px solid #c97a3a; border-radius: 12px; padding: clamp(12px, 4vw, 16px); }
 
         .big-input { transition: border-color 0.2s ease, background-color 0.2s ease; }
         .big-input:focus { border-color: #7349c5 !important; background-color: rgba(115, 73, 197, 0.2) !important; }
@@ -428,9 +408,11 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         .quality-chip { transition: background-color 0.15s ease, transform 0.1s ease; }
         .quality-chip:active { animation: chipPop 0.2s ease; }
 
-        .change-exercise-btn, .cancel-edit-btn { transition: background-color 0.2s ease, transform 0.15s ease; }
-        .change-exercise-btn:hover, .cancel-edit-btn:hover { background-color: rgba(115, 73, 197, 0.2); }
-        .change-exercise-btn:active, .cancel-edit-btn:active { transform: scale(0.95); }
+        .change-exercise-btn, .cancel-edit-btn, .move-btn, .set-delete-btn { transition: background-color 0.2s ease, transform 0.15s ease, color 0.15s ease; }
+        .change-exercise-btn:hover, .cancel-edit-btn:hover, .move-btn:hover:not(:disabled) { background-color: rgba(115, 73, 197, 0.2); }
+        .change-exercise-btn:active, .cancel-edit-btn:active, .move-btn:active:not(:disabled) { transform: scale(0.92); }
+        .move-btn:disabled { opacity: 0.25; cursor: default; }
+        .set-delete-btn:hover { color: #e57373; transform: rotate(90deg); }
 
         .save-btn { transition: background-color 0.2s ease, transform 0.1s ease; }
         .save-btn:active { transform: scale(0.98); }
@@ -451,30 +433,61 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                 )}
             </div>
 
-            <h3 style={styles.sectionHeading}>Durchgeführte Sätze</h3>
+            <div style={styles.sectionHeadingRow}>
+                <h3 style={styles.sectionHeading}>Durchgeführte Sätze</h3>
+                {sets.length > 1 && !isEditing && (
+                    <button
+                        onClick={() => setReordering((v) => !v)}
+                        className="change-exercise-btn"
+                        style={styles.reorderToggle}
+                    >
+                        {reordering ? 'Fertig' : 'Reihenfolge ändern'}
+                    </button>
+                )}
+            </div>
+
             {sets.length > 0 ? (
                 <div style={styles.setList}>
                     {sets.map((s, idx) => (
                         <div
                             key={s.id}
-                            draggable
-                            onDragStart={() => handleDragStart(idx)}
-                            onDragOver={(e) => handleDragOver(e, idx)}
-                            onDrop={() => handleDrop(idx)}
-                            onClick={() => handleStartEdit(s, idx)}
-                            className={`set-row ${editingSet?.id === s.id ? 'set-row-editing' : ''} ${dragOverIndex === idx ? 'set-row-dragover' : ''}`}
-                            style={{ ...styles.setRow, opacity: draggingIndex === idx ? 0.4 : 1 }}
+                            onClick={() => !reordering && handleStartEdit(s, idx)}
+                            className={`set-row ${editingSet?.id === s.id ? 'set-row-editing' : ''}`}
+                            style={{ ...styles.setRow, cursor: reordering ? 'default' : 'pointer' }}
                         >
-                            <span style={styles.dragHandle}>⠿</span>
+                            {reordering && (
+                                <div style={styles.moveButtons}>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleMoveSet(idx, -1) }}
+                                        className="move-btn"
+                                        style={styles.moveBtn}
+                                        disabled={idx === 0}
+                                        aria-label="Nach oben verschieben"
+                                    >
+                                        ▲
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleMoveSet(idx, 1) }}
+                                        className="move-btn"
+                                        style={styles.moveBtn}
+                                        disabled={idx === sets.length - 1}
+                                        aria-label="Nach unten verschieben"
+                                    >
+                                        ▼
+                                    </button>
+                                </div>
+                            )}
                             <span style={styles.setRowText}>{formatSetSummary(s)}</span>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteSet(s) }}
-                                className="set-delete-btn"
-                                style={styles.deleteButton}
-                                aria-label="Satz löschen"
-                            >
-                                ×
-                            </button>
+                            {!reordering && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteSet(s) }}
+                                    className="set-delete-btn"
+                                    style={styles.deleteButton}
+                                    aria-label="Satz löschen"
+                                >
+                                    ×
+                                </button>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -625,17 +638,23 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
 }
 
 const styles = {
-    wrapper: { padding: '24px' },
+    wrapper: { padding: 'clamp(16px, 5vw, 24px)', overflowX: 'hidden', maxWidth: '100vw', boxSizing: 'border-box' },
     exerciseHeader: {
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
         marginBottom: '20px', gap: '12px',
     },
-    exerciseName: { fontSize: '1.2rem', margin: 0, transition: 'color 0.2s ease' },
+    exerciseName: { fontSize: 'clamp(1rem, 4.5vw, 1.2rem)', margin: 0, transition: 'color 0.2s ease' },
     changeButton: {
         background: 'transparent', border: '1px solid #7349c5', color: '#f3f3f3',
-        borderRadius: '8px', padding: '8px 12px', fontSize: '0.8rem', cursor: 'pointer', flexShrink: 0,
+        borderRadius: '8px', padding: 'clamp(6px, 2vw, 8px) clamp(8px, 2.5vw, 12px)',
+        fontSize: 'clamp(0.72rem, 3vw, 0.8rem)', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
     },
+    sectionHeadingRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' },
     sectionHeading: { fontSize: '0.95rem', color: '#88838d', margin: '0 0 10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' },
+    reorderToggle: {
+        background: 'transparent', border: '1px solid #7349c5', color: '#f3f3f3',
+        borderRadius: '8px', padding: '5px 10px', fontSize: '0.72rem', cursor: 'pointer', marginBottom: '10px',
+    },
     setList: { marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '6px' },
     emptyText: { color: '#88838d', fontSize: '0.85rem', marginBottom: '20px' },
     errorText: { color: '#e57373', fontSize: '0.85rem', marginBottom: '20px' },
@@ -644,51 +663,63 @@ const styles = {
         backgroundColor: 'rgba(115, 73, 197, 0.1)', border: '1px solid rgba(115, 73, 197, 0.35)',
         borderRadius: '8px', padding: '8px 12px',
     },
+    moveButtons: { display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 },
+    moveBtn: {
+        background: 'none', border: '1px solid #7349c5', borderRadius: '4px', color: '#f3f3f3',
+        fontSize: '0.6rem', width: '22px', height: '18px', cursor: 'pointer', padding: 0, lineHeight: 1,
+    },
     lastTimePanel: { marginBottom: '20px' },
     lastTimeRow: {
         display: 'flex', alignItems: 'center',
         backgroundColor: 'rgba(115, 73, 197, 0.06)', border: '1px solid rgba(115, 73, 197, 0.25)',
         borderRadius: '8px', padding: '8px 12px',
     },
-    dragHandle: { color: '#88838d', fontSize: '1rem', flexShrink: 0 },
-    setRowText: { fontSize: '0.85rem', color: '#f3f3f3', flex: 1 },
+    setRowText: { fontSize: 'clamp(0.78rem, 3.2vw, 0.85rem)', color: '#f3f3f3', flex: 1, minWidth: 0 },
     deleteButton: {
         background: 'none', border: 'none', color: '#88838d', fontSize: '1.1rem',
         cursor: 'pointer', lineHeight: 1, padding: '2px 6px', flexShrink: 0,
     },
-    bigSetHeading: { fontSize: '1.6rem', margin: '4px 0 14px' },
+    bigSetHeading: { fontSize: 'clamp(1.25rem, 6vw, 1.6rem)', margin: '4px 0 14px' },
     form: { display: 'flex', flexDirection: 'column', gap: '12px' },
     toggleRow: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' },
     toggleTrack: {
         width: '36px', height: '20px', borderRadius: '999px',
-        border: '1px solid #7349c5', position: 'relative',
+        border: '1px solid #7349c5', position: 'relative', flexShrink: 0,
     },
     toggleThumb: {
         width: '14px', height: '14px', borderRadius: '50%',
         backgroundColor: '#f3f3f3', position: 'absolute', top: '2px', left: '2px',
     },
-    toggleLabel: { color: '#f3f3f3', fontSize: '0.9rem' },
-    bigInputRow: { display: 'flex', alignItems: 'center', gap: '14px' },
+    toggleLabel: { color: '#f3f3f3', fontSize: 'clamp(0.8rem, 3.2vw, 0.9rem)' },
+    bigInputRow: { display: 'flex', alignItems: 'center', gap: 'clamp(8px, 3vw, 14px)' },
     bigInput: {
         flex: 1,
+        minWidth: 0,
         backgroundColor: 'rgba(115, 73, 197, 0.12)', border: '1px solid rgba(115, 73, 197, 0.35)',
-        borderRadius: '10px', padding: '16px', color: '#f3f3f3', fontSize: '1.3rem', outline: 'none',
+        borderRadius: '10px',
+        padding: 'clamp(11px, 3.5vw, 16px)',
+        color: '#f3f3f3', fontSize: 'clamp(1rem, 4.5vw, 1.3rem)', outline: 'none',
+        boxSizing: 'border-box',
     },
-    bigInputLabel: { color: '#88838d', fontSize: '0.85rem', width: '140px', flexShrink: 0 },
+    bigInputLabel: {
+        color: '#88838d', fontSize: 'clamp(0.68rem, 2.8vw, 0.85rem)',
+        width: 'clamp(80px, 26vw, 140px)', flexShrink: 0,
+    },
     label: { color: '#88838d', fontSize: '0.8rem' },
     qualityRow: { display: 'flex', flexWrap: 'wrap', gap: '6px' },
     qualityChip: {
-        width: '32px', height: '32px', borderRadius: '8px',
+        width: 'clamp(28px, 8vw, 32px)', height: 'clamp(28px, 8vw, 32px)', borderRadius: '8px',
         border: '1px solid #7349c5', color: '#f3f3f3', fontSize: '0.8rem', cursor: 'pointer',
     },
     textarea: {
         backgroundColor: 'rgba(115, 73, 197, 0.12)', border: '1px solid rgba(115, 73, 197, 0.35)',
         borderRadius: '8px', padding: '10px', color: '#f3f3f3', fontSize: '0.9rem', outline: 'none',
-        resize: 'vertical', fontFamily: 'inherit',
+        resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', width: '100%',
     },
     saveButton: {
         color: '#f3f3f3', border: 'none',
-        borderRadius: '8px', padding: '14px', fontSize: '1rem', cursor: 'pointer', marginTop: '6px',
+        borderRadius: '8px', padding: 'clamp(12px, 3.5vw, 14px)', fontSize: 'clamp(0.9rem, 3.8vw, 1rem)',
+        cursor: 'pointer', marginTop: '6px',
     },
 }
 

@@ -316,28 +316,34 @@ function ExercisePicker({ onSelectExercise, onClose }) {
 }
 
 const styles = {
-    page: { minHeight: '100vh', backgroundColor: '#110e22', color: '#f3f3f3' },
+    page: { minHeight: '100vh', backgroundColor: '#110e22', color: '#f3f3f3', overflowX: 'hidden', maxWidth: '100vw', boxSizing: 'border-box' },
     header: {
         display: 'flex', alignItems: 'center', gap: '12px',
-        padding: '20px 24px', borderBottom: '1px solid #7349c5',
+        padding: 'clamp(16px, 4vw, 20px) clamp(16px, 5vw, 24px)', borderBottom: '1px solid #7349c5',
     },
     backButton: {
         background: 'none', border: '1px solid #7349c5', borderRadius: '8px',
         color: '#f3f3f3', width: '32px', height: '32px', flexShrink: 0,
         fontSize: '1.2rem', lineHeight: 1, cursor: 'pointer',
     },
-    title: { fontSize: '1.3rem', margin: 0 },
+    title: { fontSize: 'clamp(1.1rem, 4.5vw, 1.3rem)', margin: 0 },
     controls: {
-        display: 'flex', alignItems: 'center', gap: '10px',
-        padding: '16px 24px',
+        display: 'flex', alignItems: 'center', gap: 'clamp(6px, 2vw, 10px)',
+        padding: '16px clamp(16px, 5vw, 24px)',
+        boxSizing: 'border-box',
     },
     searchInput: {
-        flex: 1, background: 'rgba(115, 73, 197, 0.12)', border: '1px solid rgba(115, 73, 197, 0.35)',
-        borderRadius: '8px', padding: '10px 12px', color: '#f3f3f3', fontSize: '0.95rem', outline: 'none',
+        flex: 1,
+        minWidth: 0,
+        background: 'rgba(115, 73, 197, 0.12)', border: '1px solid rgba(115, 73, 197, 0.35)',
+        borderRadius: '8px',
+        padding: 'clamp(8px, 2.5vw, 10px) clamp(10px, 3vw, 12px)',
+        color: '#f3f3f3', fontSize: 'clamp(0.85rem, 3.5vw, 0.95rem)', outline: 'none',
+        boxSizing: 'border-box',
     },
     roundButton: {
-        width: '40px', height: '40px', borderRadius: '50%',
-        border: '1px solid #7349c5', color: '#f3f3f3', fontSize: '1.1rem',
+        width: 'clamp(34px, 9vw, 40px)', height: 'clamp(34px, 9vw, 40px)', borderRadius: '50%',
+        border: '1px solid #7349c5', color: '#f3f3f3', fontSize: '1rem',
         cursor: 'pointer', flexShrink: 0,
     },
     segmented: {
@@ -345,9 +351,10 @@ const styles = {
         overflow: 'hidden', flexShrink: 0,
     },
     segmentButton: {
-        border: 'none', padding: '10px 12px', fontSize: '0.8rem', cursor: 'pointer',
+        border: 'none', padding: 'clamp(6px, 2vw, 10px) clamp(7px, 2.2vw, 12px)',
+        fontSize: 'clamp(0.68rem, 2.8vw, 0.8rem)', cursor: 'pointer', whiteSpace: 'nowrap',
     },
-    activeFilterRow: { padding: '0 24px 12px' },
+    activeFilterRow: { padding: '0 clamp(16px, 5vw, 24px) 12px' },
     activeFilterTag: {
         display: 'inline-flex', alignItems: 'center', gap: '6px',
         backgroundColor: 'rgba(115, 73, 197, 0.2)', border: '1px solid #7349c5',
@@ -360,9 +367,10 @@ const styles = {
     statusText: { color: '#88838d', textAlign: 'center', padding: '32px 24px' },
     grid: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(110px, 38vw, 140px), 1fr))',
         gap: '12px',
-        padding: '0 24px 32px',
+        padding: '0 clamp(16px, 5vw, 24px) 32px',
+        boxSizing: 'border-box',
     },
     tile: {
         backgroundColor: 'rgba(115, 73, 197, 0.1)',
