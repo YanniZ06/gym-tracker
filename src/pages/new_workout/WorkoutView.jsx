@@ -1,19 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../supabaseClient'
-
-import ExercisePicker from './ExercisePicker'
 import OptionModal from '../../modals/OptionModal'
+import ExercisePicker from './ExercisePicker'
+import SetEntryView from './SetEntryView'
 
 function formatDate(dateStr) {
     if (!dateStr) return ''
-
     const d = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00')
-
-    if (isNaN(d.getTime())) {
-        console.warn('Ungültiges Datum erhalten:', dateStr)
-        return ''
-    }
-
+    if (isNaN(d.getTime())) return ''
     return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
@@ -22,11 +16,12 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
     const [title, setTitle] = useState('')
     const [loading, setLoading] = useState(true)
 
+    const [pickingExercise, setPickingExercise] = useState(false)
+    const [currentExercise, setCurrentExercise] = useState(null)
+
     const [showError, setShowError] = useState(false)
     const [errorMessage, setErrorMessage] = useState('')
-    const [retryAction, setRetryAction] = useState(null) // Funktion, die bei "Erneut versuchen" ausgeführt wird
-    const [pickingExercise, setPickingExercise] = useState(false)
-
+    const [retryAction, setRetryAction] = useState(null)
 
     useEffect(() => {
         loadWorkout()
@@ -55,14 +50,13 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
     function handleDbError(error, actionLabel, retryFn) {
         console.error(`Fehler [${error.code}] beim ${actionLabel}:`, error.message)
         setErrorMessage(`Fehler [${error.code}] beim ${actionLabel}: ${error.message}`)
-        setRetryAction(() => retryFn) // Funktion selbst im State speichern, siehe Hinweis unten
+        setRetryAction(() => retryFn)
         setShowError(true)
     }
 
     function handleTitleBlur() {
         const trimmed = title.trim()
         if (trimmed === (workout?.title || '')) return
-
         saveTitle(trimmed)
     }
 
@@ -105,16 +99,38 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
 
             <div style={styles.divider} />
 
-            <section style={styles.promptSection}>
-                <h2 style={styles.promptTitle}>Los geht's</h2>
-                <p style={styles.promptText}>
-                    Wähle deine erste Übung, um mit dem Tracken zu beginnen.
-                </p>
+            {currentExercise ? (
+                <SetEntryView
+                    workoutId={workoutId}
+                    userdata={userdata}
+                    exercise={currentExercise}
+                    onChangeExercise={() => {
+                        setCurrentExercise(null)
+                        setPickingExercise(true)
+                    }}
+                />
+            ) : (
+                <section style={styles.promptSection}>
+                    <h2 style={styles.promptTitle}>Los geht's</h2>
+                    <p style={styles.promptText}>
+                        Wähle deine erste Übung, um mit dem Tracken zu beginnen.
+                    </p>
 
-                <button style={styles.primaryButton} onClick={() => setPickingExercise(true)}>
-                    Übung auswählen
-                </button>
-            </section>
+                    <button style={styles.primaryButton} onClick={() => setPickingExercise(true)}>
+                        Übung auswählen
+                    </button>
+                </section>
+            )}
+
+            {pickingExercise && (
+                <ExercisePicker
+                    onSelectExercise={(exercise) => {
+                        setCurrentExercise(exercise)
+                        setPickingExercise(false)
+                    }}
+                    onClose={() => setPickingExercise(false)}
+                />
+            )}
 
             {showError && (
                 <OptionModal
@@ -135,17 +151,6 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
                     isError={true}
                     canCancel={false}
                     onClose={() => setShowError(false)}
-                />
-            )}
-
-            {pickingExercise && (
-                <ExercisePicker
-                    onSelectExercise={(exercise) => {
-                        console.log('Ausgewählte Übung:', exercise)
-                        setPickingExercise(false)
-                        // hier als Nächstes: Satz-Eingabeformular öffnen
-                    }}
-                    onClose={() => setPickingExercise(false)}
                 />
             )}
         </div>
