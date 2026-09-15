@@ -6,6 +6,26 @@ import Dashboard from './pages/Dashboard'
 import WorkoutView from './pages/new_workout/WorkoutView'
 // import './App.css'
 
+const VIEW_STORAGE_KEY = 'app_last_view'
+
+function loadStoredView() {
+  try {
+    const stored = localStorage.getItem(VIEW_STORAGE_KEY)
+    if (stored) return JSON.parse(stored)
+  } catch (e) {
+    console.warn('Konnte gespeicherte View nicht lesen:', e)
+  }
+  return null
+}
+
+function persistView(view, workoutId) {
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ view, workoutId: workoutId ?? null }))
+  } catch (e) {
+    console.warn('Konnte View nicht speichern:', e)
+  }
+}
+
 function App() {
   const [view, setView] = useState('login')
   const [session, setSession] = useState(null)
@@ -24,7 +44,15 @@ function App() {
       setSession(session)
 
       if (session) {
-        setView('dashboard')
+        const stored = loadStoredView()
+        if (stored && (stored.view === 'dashboard' || stored.view === 'workout')) {
+          setView(stored.view)
+          if (stored.view === 'workout' && stored.workoutId) {
+            setActiveWorkoutId(stored.workoutId)
+          }
+        } else {
+          setView('dashboard')
+        }
       }
 
       if (checkingSession) {
@@ -61,7 +89,7 @@ function App() {
         setLoadingUserdata(false)
 
         if (error) {
-          if (error.code === 'PGRST116') { // Kein Eintrag gefunden
+          if (error.code === 'PGRST116') {
             createUserRecord()
           } else {
             console.error('Fehler [', error.code, '] beim Abrufen der Benutzerdaten:', error.message)
@@ -92,9 +120,16 @@ function App() {
   function changeView(newView, payload = {}) {
     setFadeState('out')
     setTimeout(() => {
+      const nextWorkoutId = payload.workoutId !== undefined ? payload.workoutId : activeWorkoutId
       if (payload.workoutId !== undefined) setActiveWorkoutId(payload.workoutId)
       setView(newView)
       setFadeState('in')
+
+      if (newView === 'login') {
+        localStorage.removeItem(VIEW_STORAGE_KEY)
+      } else {
+        persistView(newView, newView === 'workout' ? nextWorkoutId : null)
+      }
     }, 200)
   }
 

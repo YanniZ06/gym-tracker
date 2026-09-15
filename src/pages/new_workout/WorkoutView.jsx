@@ -11,6 +11,10 @@ function formatDate(dateStr) {
     return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+function currentExerciseKey(workoutId) {
+    return `wo_${workoutId}_current_exercise_id`
+}
+
 function WorkoutView({ session, userdata, workoutId, onExit }) {
     const [workout, setWorkout] = useState(null)
     const [title, setTitle] = useState('')
@@ -25,6 +29,7 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
 
     useEffect(() => {
         loadWorkout()
+        restoreCurrentExercise()
     }, [workoutId])
 
     function loadWorkout() {
@@ -45,6 +50,29 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
                     setTitle(data.title || '')
                 }
             })
+    }
+
+    function restoreCurrentExercise() {
+        if (!workoutId) return
+        const storedId = localStorage.getItem(currentExerciseKey(workoutId))
+        if (!storedId) return
+
+        supabase
+            .from('EXERCISES')
+            .select('*')
+            .eq('id', parseInt(storedId, 10))
+            .single()
+            .then(({ data, error }) => {
+                if (!error && data) {
+                    setCurrentExercise(data)
+                }
+            })
+    }
+
+    function handleSelectExercise(exercise) {
+        setCurrentExercise(exercise)
+        setPickingExercise(false)
+        localStorage.setItem(currentExerciseKey(workoutId), exercise.id.toString())
     }
 
     function handleDbError(error, actionLabel, retryFn) {
@@ -124,10 +152,7 @@ function WorkoutView({ session, userdata, workoutId, onExit }) {
 
             {pickingExercise && (
                 <ExercisePicker
-                    onSelectExercise={(exercise) => {
-                        setCurrentExercise(exercise)
-                        setPickingExercise(false)
-                    }}
+                    onSelectExercise={handleSelectExercise}
                     onClose={() => setPickingExercise(false)}
                 />
             )}

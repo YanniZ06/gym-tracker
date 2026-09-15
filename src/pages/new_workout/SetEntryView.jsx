@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../supabaseClient'
 import OptionModal from '../../modals/OptionModal'
 
@@ -6,15 +6,23 @@ function getSessionKey(headId, suffix) {
     return `wo_${headId}_${suffix}`
 }
 
-function formatTimeForDb(date) {
-    return date.toTimeString().split(' ')[0]
+function qualityLabel(quality) {
+    return quality != null ? quality : 'keine Angegeben'
 }
 
-function formatElapsed(ms) {
-    const totalSeconds = Math.floor(ms / 1000)
-    const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0')
-    const s = (totalSeconds % 60).toString().padStart(2, '0')
-    return `${m}:${s}`
+function formatSetSummary(s) {
+    const parts = [`#${s.set}`, `${s.reps} Wdh.`]
+    if (s.set_weight != null) parts.push(`× ${s.set_weight}kg`)
+    if (s.rest_time != null) parts.push(`Rest danach ${s.rest_time}s`)
+    parts.push(`Quali => ${qualityLabel(s.quality)}`)
+    return parts.join(' · ')
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return ''
+    const d = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00')
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 async function getOrCreateConstantCounter(userId, exerciseId) {
@@ -46,20 +54,12 @@ async function getOrCreateConstantCounter(userId, exerciseId) {
 
 function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
     const [sets, setSets] = useState([])
-    const [loadingSets, setLoadingSets] = useState(true)
 
     const [reps, setReps] = useState('')
     const [weight, setWeight] = useState('')
     const [comment, setComment] = useState('')
     const [quality, setQuality] = useState(-1)
     const [restInput, setRestInput] = useState('')
-
-    const [liveMode, setLiveMode] = useState(false)
-    const [liveRunning, setLiveRunning] = useState(false)
-    const [liveStart, setLiveStart] = useState(null)
-    const [liveEnd, setLiveEnd] = useState(null)
-    const [nowTick, setNowTick] = useState(Date.now())
-    const tickRef = useRef(null)
 
     const [editingSet, setEditingSet] = useState(null)
     const [draggingIndex, setDraggingIndex] = useState(null)
@@ -70,25 +70,21 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
     const [showError, setShowError] = useState(false)
     const [errorMessage, setErrorMessage] = useState('')
 
+    // "Letzte Sätze"-Vergleichsansicht
+    const [lastTimeStatus, setLastTimeStatus] = useState('loading') // 'loading' | 'none' | 'error' | 'ready'
+    const [lastTimeSets, setLastTimeSets] = useState([])
+    const [lastTimeDate, setLastTimeDate] = useState(null)
+    const [lastTimeErrorMsg, setLastTimeErrorMsg] = useState('')
+    const [detailSet, setDetailSet] = useState(null)
+
     useEffect(() => {
         loadSets()
+        loadLastTime()
         resetFormForNewSet([])
         setEditingSet(null)
     }, [exercise?.id])
 
-    useEffect(() => {
-        if (liveRunning) {
-            tickRef.current = setInterval(() => setNowTick(Date.now()), 1000)
-        } else if (tickRef.current) {
-            clearInterval(tickRef.current)
-        }
-        return () => {
-            if (tickRef.current) clearInterval(tickRef.current)
-        }
-    }, [liveRunning])
-
     function loadSets() {
-        setLoadingSets(true)
         supabase
             .from('WORKOUT_DATA')
             .select('*')
@@ -96,7 +92,6 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
             .eq('exercise_id', exercise.id)
             .order('set', { ascending: true })
             .then(({ data, error }) => {
-                setLoadingSets(false)
                 if (error) {
                     handleError(error, 'Laden der bisherigen Sätze')
                 } else {
@@ -106,14 +101,70 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
             })
     }
 
+    async function loadLastTime() {
+        setLastTimeStatus('loading')
+
+        const baselineKey = getSessionKey(workoutId, `baseline_counter_${exercise.id}`)
+        let baseline = localStorage.getItem(baselineKey)
+
+        try {
+            if (baseline === null) {
+                const { data: counterRow, error: counterError } = await supabase
+                    .from('CONSTANT_USER_EXERCISE_COUNTER')
+                    .select('*')
+                    .eq('user', userdata.id)
+                    .eq('exercise', exercise.id)
+                    .maybeSingle()
+
+                if (counterError) throw counterError
+
+                baseline = counterRow ? counterRow.counter : 0
+                localStorage.setItem(baselineKey, baseline.toString())
+            } else {
+                baseline = parseInt(baseline, 10)
+            }
+
+            if (baseline < 1) {
+                setLastTimeStatus('none')
+                return
+            }
+
+            const { data: pastSets, error: pastError } = await supabase
+                .from('WORKOUT_DATA')
+                .select('*')
+                .eq('owner', userdata.id)
+                .eq('exercise_id', exercise.id)
+                .eq('constant_user_exercise_id_counter', baseline)
+                .order('set', { ascending: true })
+
+            if (pastError) throw pastError
+
+            if (!pastSets || pastSets.length === 0) {
+                setLastTimeStatus('none')
+                return
+            }
+
+            const headId = pastSets[0].head
+            const { data: pastWorkout, error: woError } = await supabase
+                .from('WORKOUTS')
+                .select('date')
+                .eq('id', headId)
+                .single()
+
+            setLastTimeSets(pastSets)
+            setLastTimeDate(woError ? null : pastWorkout.date)
+            setLastTimeStatus('ready')
+        } catch (err) {
+            console.error('Fehler beim Laden der Vergleichswerte:', err.message)
+            setLastTimeErrorMsg(err.message)
+            setLastTimeStatus('error')
+        }
+    }
+
     function resetFormForNewSet(currentSets) {
         setReps('')
         setComment('')
         setQuality(-1)
-        setLiveMode(false)
-        setLiveRunning(false)
-        setLiveStart(null)
-        setLiveEnd(null)
 
         const lastSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null
         setWeight(lastSet ? (lastSet.set_weight ?? '').toString() : (exercise.beginner_weight != null ? exercise.beginner_weight.toString() : ''))
@@ -126,37 +177,12 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         setShowError(true)
     }
 
-    function handleStartLive() {
-        setLiveStart(new Date())
-        setLiveEnd(null)
-        setLiveRunning(true)
-        setNowTick(Date.now())
-    }
-
-    function handleEndLive() {
-        const end = new Date()
-        setLiveEnd(end)
-        setLiveRunning(false)
-
-        // Rest-Vorschlag berechnen, falls es einen vorherigen Live-Satz mit Endzeit gibt
-        const lastSet = sets.length > 0 ? sets[sets.length - 1] : null
-        if (lastSet && lastSet.live_entry && lastSet.end_time && liveStart) {
-            const prevEndDate = new Date()
-            const [h, m, s2] = lastSet.end_time.split(':').map(Number)
-            prevEndDate.setHours(h, m, s2, 0)
-            const restSeconds = Math.max(0, Math.round((liveStart.getTime() - prevEndDate.getTime()) / 1000))
-            setRestInput(restSeconds.toString())
-        }
-    }
-
     function handleStartEdit(set, idx) {
         setEditingSet(set)
         setReps(set.reps != null ? set.reps.toString() : '')
         setWeight(set.set_weight != null ? set.set_weight.toString() : '')
         setComment(set.comment || '')
         setQuality(set.quality != null ? set.quality : -1)
-        setLiveMode(false)
-        setLiveRunning(false)
 
         const prevSet = idx > 0 ? sets[idx - 1] : null
         setRestInput(prevSet && prevSet.rest_time != null ? prevSet.rest_time.toString() : '')
@@ -165,6 +191,16 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
     function handleCancelEdit() {
         setEditingSet(null)
         resetFormForNewSet(sets)
+    }
+
+    async function resolveConstantCounter() {
+        const key = getSessionKey(workoutId, `const_counter_${exercise.id}`)
+        const cached = localStorage.getItem(key)
+        if (cached !== null) return parseInt(cached, 10)
+
+        const value = await getOrCreateConstantCounter(userdata.id, exercise.id)
+        localStorage.setItem(key, value.toString())
+        return value
     }
 
     async function handleSaveNewSet() {
@@ -190,15 +226,9 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                 localStorage.setItem(lastExerciseKey, exercise.id.toString())
             }
 
-            const countedKey = getSessionKey(workoutId, 'counted_exercises')
-            const countedExercises = JSON.parse(localStorage.getItem(countedKey) || '[]')
-
-            let constantCounterValue = null
-            if (!countedExercises.includes(exercise.id)) {
-                constantCounterValue = await getOrCreateConstantCounter(userdata.id, exercise.id)
-                countedExercises.push(exercise.id)
-                localStorage.setItem(countedKey, JSON.stringify(countedExercises))
-            }
+            // constant_user_exercise_id_counter: einmal pro Session+Übung ermittelt/erhöht,
+            // danach für JEDEN Satz dieser Übung in der Session wiederverwendet
+            const constantCounterValue = await resolveConstantCounter()
 
             const lastSet = sets.length > 0 ? sets[sets.length - 1] : null
             if (lastSet && restInput !== '' && Number(restInput) !== lastSet.rest_time) {
@@ -224,9 +254,9 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                 type_wo: 1,
                 comment: comment.trim() || null,
                 quality: quality === -1 ? null : quality,
-                live_entry: liveMode,
-                start_time: liveMode && liveStart ? formatTimeForDb(liveStart) : null,
-                end_time: liveMode && liveEnd ? formatTimeForDb(liveEnd) : null,
+                live_entry: false,
+                start_time: null,
+                end_time: null,
                 rest_time: null,
             }
 
@@ -312,12 +342,12 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         const changed = renumbered.filter((s, i) => s.set !== orderedSets[i].set)
 
         if (changed.length > 0) {
-            const { error } = await Promise.all(
-                changed.map((s) => supabase.from('WORKOUT_DATA').update({ set: s.set }).eq('id', s.id))
-            ).then(() => ({ error: null })).catch((err) => ({ error: err }))
-
-            if (error) {
-                handleError(error, 'Aktualisieren der Satz-Reihenfolge')
+            try {
+                await Promise.all(
+                    changed.map((s) => supabase.from('WORKOUT_DATA').update({ set: s.set }).eq('id', s.id))
+                )
+            } catch (err) {
+                handleError(err, 'Aktualisieren der Satz-Reihenfolge')
                 return
             }
         }
@@ -367,10 +397,9 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
     }
 
     const isEditing = editingSet !== null
-    const liveElapsed = liveRunning && liveStart ? nowTick - liveStart.getTime() : liveEnd && liveStart ? liveEnd.getTime() - liveStart.getTime() : 0
-
     const editingIdx = isEditing ? sets.findIndex((s) => s.id === editingSet.id) : -1
     const showRestField = isEditing ? editingIdx > 0 : sets.length > 0
+    const currentSetNumber = isEditing ? editingSet.set : sets.length + 1
 
     return (
         <div style={styles.wrapper}>
@@ -378,7 +407,7 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         @keyframes rowFadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes formFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes chipPop { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
-        @keyframes liveBoxIn { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 100px; } }
+        @keyframes panelFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         .set-row { animation: rowFadeIn 0.2s ease; transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease; cursor: grab; }
         .set-row:active { cursor: grabbing; }
@@ -386,6 +415,9 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
         .set-row-dragover { border-color: #8a63d6 !important; }
         .set-delete-btn { transition: color 0.15s ease, transform 0.15s ease; }
         .set-delete-btn:hover { color: #e57373; transform: rotate(90deg); }
+
+        .last-time-row { animation: rowFadeIn 0.2s ease; transition: background-color 0.15s ease, border-color 0.15s ease; cursor: pointer; }
+        .last-time-row:hover { background-color: rgba(115, 73, 197, 0.18) !important; }
 
         .set-form { animation: formFadeIn 0.2s ease; transition: background-color 0.2s ease, border-color 0.2s ease; }
         .set-form-editing { background-color: rgba(201, 122, 58, 0.08); border: 1px solid #c97a3a; border-radius: 12px; padding: 16px; }
@@ -405,12 +437,9 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
       `}</style>
 
             <div style={styles.exerciseHeader}>
-                <div>
-                    <h2 style={{ ...styles.exerciseName, color: isEditing ? '#e8a05f' : '#f3f3f3' }}>
-                        {isEditing ? `Bearbeiten von: ${exercise.name} Satz ${editingSet.set}` : exercise.name}
-                    </h2>
-                    {!isEditing && <span style={styles.exerciseMeta}>Satz {sets.length + 1}</span>}
-                </div>
+                <h2 style={{ ...styles.exerciseName, color: isEditing ? '#e8a05f' : '#f3f3f3' }}>
+                    {isEditing ? `Bearbeiten von: ${exercise.name} Satz ${editingSet.set}` : exercise.name}
+                </h2>
                 {isEditing ? (
                     <button onClick={handleCancelEdit} className="cancel-edit-btn" style={styles.changeButton}>
                         Abbrechen
@@ -422,7 +451,8 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                 )}
             </div>
 
-            {sets.length > 0 && (
+            <h3 style={styles.sectionHeading}>Durchgeführte Sätze</h3>
+            {sets.length > 0 ? (
                 <div style={styles.setList}>
                     {sets.map((s, idx) => (
                         <div
@@ -436,10 +466,7 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                             style={{ ...styles.setRow, opacity: draggingIndex === idx ? 0.4 : 1 }}
                         >
                             <span style={styles.dragHandle}>⠿</span>
-                            <span style={styles.setRowText}>
-                                #{s.set} · {s.reps} Wdh. {s.set_weight != null ? `× ${s.set_weight}kg` : ''}
-                                {s.rest_time != null ? ` · Rest danach ${s.rest_time}s` : ''}
-                            </span>
+                            <span style={styles.setRowText}>{formatSetSummary(s)}</span>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleDeleteSet(s) }}
                                 className="set-delete-btn"
@@ -451,33 +478,49 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                         </div>
                     ))}
                 </div>
+            ) : (
+                <p style={styles.emptyText}>Noch keine Sätze für diese Übung erfasst.</p>
             )}
 
-            <div key={isEditing ? editingSet.id : 'new'} className={`set-form ${isEditing ? 'set-form-editing' : ''}`} style={styles.form}>
-                {!isEditing && (
-                    <label style={styles.toggleRow} onClick={() => setLiveMode((v) => !v)}>
-                        <div style={{ ...styles.toggleTrack, backgroundColor: liveMode ? '#7349c5' : 'transparent' }}>
-                            <div style={{ ...styles.toggleThumb, transform: liveMode ? 'translateX(16px)' : 'translateX(0)' }} />
+            {!isEditing && (
+                <div style={{ ...styles.lastTimePanel, animation: 'panelFadeIn 0.2s ease' }}>
+                    <h3 style={styles.sectionHeading}>
+                        {lastTimeStatus === 'ready'
+                            ? `Letzte Sätze (vom Workout am ${formatDate(lastTimeDate)})`
+                            : 'Letzte Sätze'}
+                    </h3>
+
+                    {lastTimeStatus === 'loading' && <p style={styles.emptyText}>Lädt...</p>}
+                    {lastTimeStatus === 'none' && <p style={styles.emptyText}>Noch keine Vergleichswerte verfügbar.</p>}
+                    {lastTimeStatus === 'error' && <p style={styles.errorText}>Fehler beim Laden der Vergleichswerte: {lastTimeErrorMsg}</p>}
+
+                    {lastTimeStatus === 'ready' && (
+                        <div style={styles.setList}>
+                            {lastTimeSets.map((s) => (
+                                <div
+                                    key={s.id}
+                                    onClick={() => setDetailSet(s)}
+                                    className="last-time-row"
+                                    style={styles.lastTimeRow}
+                                >
+                                    <span style={styles.setRowText}>{formatSetSummary(s)}</span>
+                                </div>
+                            ))}
                         </div>
-                        <span style={styles.toggleLabel}>Satz live timen</span>
-                    </label>
-                )}
+                    )}
+                </div>
+            )}
 
-                {!isEditing && liveMode && (
-                    <div style={{ ...styles.liveBox, animation: 'liveBoxIn 0.2s ease' }}>
-                        <span style={styles.liveTimer}>{formatElapsed(liveElapsed)}</span>
-                        {!liveRunning && !liveEnd && (
-                            <button onClick={handleStartLive} style={styles.liveButton}>Satz starten</button>
-                        )}
-                        {liveRunning && (
-                            <button onClick={handleEndLive} style={{ ...styles.liveButton, backgroundColor: '#c95a5a' }}>Satz beenden</button>
-                        )}
-                        {liveEnd && !liveRunning && (
-                            <button onClick={handleStartLive} style={styles.liveButtonSecondary}>Neu starten</button>
-                        )}
-                    </div>
-                )}
+            <h2 style={styles.bigSetHeading}>Satz {currentSetNumber}</h2>
 
+            <div style={{ ...styles.toggleRow, opacity: 0.4, cursor: 'not-allowed' }}>
+                <div style={styles.toggleTrack}>
+                    <div style={styles.toggleThumb} />
+                </div>
+                <span style={styles.toggleLabel}>Satz live timen (bald verfügbar)</span>
+            </div>
+
+            <div key={isEditing ? editingSet.id : 'new'} className={`set-form ${isEditing ? 'set-form-editing' : ''}`} style={styles.form}>
                 <div style={styles.bigInputRow}>
                     <input
                         type="number"
@@ -513,7 +556,7 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                             className="big-input"
                             style={styles.bigInput}
                         />
-                        <span style={styles.bigInputLabel}>Rest seit letztem Satz</span>
+                        <span style={styles.bigInputLabel}>Rest seit letztem Satz (s)</span>
                     </div>
                 )}
 
@@ -556,6 +599,17 @@ function SetEntryView({ workoutId, userdata, exercise, onChangeExercise }) {
                 </button>
             </div>
 
+            {detailSet && (
+                <OptionModal
+                    title={`Satz #${detailSet.set} Details`}
+                    message={`Wiederholungen: ${detailSet.reps} · Gewicht: ${detailSet.set_weight ?? '-'} kg · Rest danach: ${detailSet.rest_time ?? '-'} s · Qualität: ${qualityLabel(detailSet.quality)}`}
+                    buttons={[{ label: 'Schließen', onClick: () => { } }]}
+                    isError={false}
+                    canCancel={true}
+                    onClose={() => setDetailSet(null)}
+                />
+            )}
+
             {showError && (
                 <OptionModal
                     title="Fehler"
@@ -577,15 +631,23 @@ const styles = {
         marginBottom: '20px', gap: '12px',
     },
     exerciseName: { fontSize: '1.2rem', margin: 0, transition: 'color 0.2s ease' },
-    exerciseMeta: { color: '#88838d', fontSize: '0.85rem' },
     changeButton: {
         background: 'transparent', border: '1px solid #7349c5', color: '#f3f3f3',
         borderRadius: '8px', padding: '8px 12px', fontSize: '0.8rem', cursor: 'pointer', flexShrink: 0,
     },
+    sectionHeading: { fontSize: '0.95rem', color: '#88838d', margin: '0 0 10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' },
     setList: { marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '6px' },
+    emptyText: { color: '#88838d', fontSize: '0.85rem', marginBottom: '20px' },
+    errorText: { color: '#e57373', fontSize: '0.85rem', marginBottom: '20px' },
     setRow: {
         display: 'flex', alignItems: 'center', gap: '10px',
         backgroundColor: 'rgba(115, 73, 197, 0.1)', border: '1px solid rgba(115, 73, 197, 0.35)',
+        borderRadius: '8px', padding: '8px 12px',
+    },
+    lastTimePanel: { marginBottom: '20px' },
+    lastTimeRow: {
+        display: 'flex', alignItems: 'center',
+        backgroundColor: 'rgba(115, 73, 197, 0.06)', border: '1px solid rgba(115, 73, 197, 0.25)',
         borderRadius: '8px', padding: '8px 12px',
     },
     dragHandle: { color: '#88838d', fontSize: '1rem', flexShrink: 0 },
@@ -594,39 +656,25 @@ const styles = {
         background: 'none', border: 'none', color: '#88838d', fontSize: '1.1rem',
         cursor: 'pointer', lineHeight: 1, padding: '2px 6px', flexShrink: 0,
     },
+    bigSetHeading: { fontSize: '1.6rem', margin: '4px 0 14px' },
     form: { display: 'flex', flexDirection: 'column', gap: '12px' },
-    toggleRow: { display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' },
+    toggleRow: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' },
     toggleTrack: {
         width: '36px', height: '20px', borderRadius: '999px',
-        border: '1px solid #7349c5', position: 'relative', transition: 'background-color 0.2s ease',
+        border: '1px solid #7349c5', position: 'relative',
     },
     toggleThumb: {
         width: '14px', height: '14px', borderRadius: '50%',
         backgroundColor: '#f3f3f3', position: 'absolute', top: '2px', left: '2px',
-        transition: 'transform 0.2s ease',
     },
     toggleLabel: { color: '#f3f3f3', fontSize: '0.9rem' },
-    liveBox: {
-        display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden',
-        backgroundColor: 'rgba(115, 73, 197, 0.12)', border: '1px solid #7349c5',
-        borderRadius: '10px', padding: '12px',
-    },
-    liveTimer: { fontSize: '1.4rem', fontVariantNumeric: 'tabular-nums', flex: 1 },
-    liveButton: {
-        backgroundColor: '#7349c5', color: '#f3f3f3', border: 'none',
-        borderRadius: '6px', padding: '8px 14px', fontSize: '0.85rem', cursor: 'pointer',
-    },
-    liveButtonSecondary: {
-        backgroundColor: 'transparent', color: '#f3f3f3', border: '1px solid #7349c5',
-        borderRadius: '6px', padding: '8px 14px', fontSize: '0.85rem', cursor: 'pointer',
-    },
     bigInputRow: { display: 'flex', alignItems: 'center', gap: '14px' },
     bigInput: {
         flex: 1,
         backgroundColor: 'rgba(115, 73, 197, 0.12)', border: '1px solid rgba(115, 73, 197, 0.35)',
         borderRadius: '10px', padding: '16px', color: '#f3f3f3', fontSize: '1.3rem', outline: 'none',
     },
-    bigInputLabel: { color: '#88838d', fontSize: '0.85rem', width: '110px', flexShrink: 0 },
+    bigInputLabel: { color: '#88838d', fontSize: '0.85rem', width: '140px', flexShrink: 0 },
     label: { color: '#88838d', fontSize: '0.8rem' },
     qualityRow: { display: 'flex', flexWrap: 'wrap', gap: '6px' },
     qualityChip: {
